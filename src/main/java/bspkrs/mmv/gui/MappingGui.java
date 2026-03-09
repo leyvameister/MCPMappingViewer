@@ -69,7 +69,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.RowFilter;
 import javax.swing.RowSorter;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SortOrder;
@@ -85,6 +87,8 @@ import javax.swing.event.DocumentListener;
 import javax.swing.plaf.FontUIResource;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableModel;
+import javax.swing.table.TableRowSorter;
 import javax.swing.text.JTextComponent;
 
 import bspkrs.mmv.McpMappingLoader;
@@ -507,6 +511,67 @@ public class MappingGui extends JFrame
         showHTMLDialog(MappingGui.this, message, "Tutorial - MCP Mapping Viewer", JOptionPane.INFORMATION_MESSAGE);
     }
 
+    private JPanel createSectionPanel(String title, JScrollPane contentScrollPane, JTable table)
+    {
+        JPanel sectionPanel = new JPanel(new BorderLayout(0, 6));
+        sectionPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        sectionPanel.setBackground(BG_APP);
+
+        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        headerPanel.setBackground(BG_APP);
+
+        JLabel sectionTitle = new JLabel(title);
+        sectionTitle.setFont(sectionTitle.getFont().deriveFont(Font.BOLD));
+        headerPanel.add(sectionTitle);
+
+        JLabel searchLabel = new JLabel("Search:");
+        headerPanel.add(searchLabel);
+
+        JTextField sectionSearchField = new JTextField();
+        sectionSearchField.setPreferredSize(new Dimension(220, 28));
+        headerPanel.add(sectionSearchField);
+        installSectionTableFilter(table, sectionSearchField);
+
+        sectionPanel.add(headerPanel, BorderLayout.NORTH);
+        sectionPanel.add(contentScrollPane, BorderLayout.CENTER);
+        return sectionPanel;
+    }
+
+    private void installSectionTableFilter(final JTable table, JTextField searchField)
+    {
+        searchField.getDocument().addDocumentListener(new DocumentListener()
+        {
+            private void applyFilter()
+            {
+                @SuppressWarnings("unchecked")
+                TableRowSorter<TableModel> sorter = table.getRowSorter() instanceof TableRowSorter
+                        ? (TableRowSorter<TableModel>) table.getRowSorter()
+                        : null;
+
+                if (sorter == null)
+                {
+                    sorter = new TableRowSorter<TableModel>(table.getModel());
+                    table.setRowSorter(sorter);
+                }
+
+                String text = searchField.getText();
+                if (text == null || text.trim().isEmpty())
+                    sorter.setRowFilter(null);
+                else
+                    sorter.setRowFilter(RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(text.trim())));
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) { applyFilter(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { applyFilter(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { applyFilter(); }
+        });
+    }
+
     /**
      * Initialize the contents of the frame.
      */
@@ -542,7 +607,6 @@ public class MappingGui extends JFrame
         JScrollPane scrlpnClasses = new JScrollPane();
         scrlpnClasses.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         scrlpnClasses.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
-        splitMain.setLeftComponent(scrlpnClasses);
 
         tblClasses = new JTable();
         tblClasses.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -555,6 +619,7 @@ public class MappingGui extends JFrame
         tblClasses.setFillsViewportHeight(true);
         tblClasses.setCellSelectionEnabled(true);
         makeTableMoreReadable(tblClasses);
+        splitMain.setLeftComponent(createSectionPanel("Classes", scrlpnClasses, tblClasses));
         frmMcpMappingViewer.getContentPane().add(splitMain, BorderLayout.CENTER);
 
         JSplitPane splitMembers = new JSplitPane();
@@ -573,7 +638,6 @@ public class MappingGui extends JFrame
         JScrollPane scrlpnMethods = new JScrollPane();
         scrlpnMethods.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         scrlpnMethods.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
-        splitMethods.setLeftComponent(scrlpnMethods);
 
         tblMethods = new JTable();
         tblMethods.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -585,11 +649,11 @@ public class MappingGui extends JFrame
         tblMethods.setModel(methodsDefaultModel);
         makeTableMoreReadable(tblMethods);
         scrlpnMethods.setViewportView(tblMethods);
+        splitMethods.setLeftComponent(createSectionPanel("Methods", scrlpnMethods, tblMethods));
 
         JScrollPane scrlpnParams = new JScrollPane();
         scrlpnParams.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         scrlpnParams.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
-        splitMethods.setRightComponent(scrlpnParams);
 
         tblParams = new JTable();
         tblParams.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -600,6 +664,7 @@ public class MappingGui extends JFrame
         tblParams.setModel(paramsDefaultModel);
         makeTableMoreReadable(tblParams);
         scrlpnParams.setViewportView(tblParams);
+        splitMethods.setRightComponent(createSectionPanel("Method Arguments", scrlpnParams, tblParams));
 
         SwingUtilities.invokeLater(new Runnable()
         {
@@ -613,7 +678,6 @@ public class MappingGui extends JFrame
         JScrollPane scrlpnFields = new JScrollPane();
         scrlpnFields.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         scrlpnFields.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
-        splitMembers.setRightComponent(scrlpnFields);
 
         tblFields = new JTable();
         tblFields.setCellSelectionEnabled(true);
@@ -624,6 +688,7 @@ public class MappingGui extends JFrame
         tblFields.setFillsViewportHeight(true);
         makeTableMoreReadable(tblFields);
         scrlpnFields.setViewportView(tblFields);
+        splitMembers.setRightComponent(createSectionPanel("Fields", scrlpnFields, tblFields));
 
         JPanel pnlHeader = new JPanel();
         frmMcpMappingViewer.getContentPane().add(pnlHeader, BorderLayout.NORTH);
