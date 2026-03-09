@@ -50,9 +50,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Enumeration;
 import java.util.prefs.Preferences;
 
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -67,7 +69,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.RowFilter;
 import javax.swing.RowSorter;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SortOrder;
@@ -78,7 +82,14 @@ import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.plaf.FontUIResource;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableModel;
+import javax.swing.table.TableRowSorter;
+import javax.swing.text.JTextComponent;
 
 import bspkrs.mmv.McpMappingLoader;
 import bspkrs.mmv.McpMappingLoader.CantLoadMCPMappingException;
@@ -185,6 +196,19 @@ public class MappingGui extends JFrame
     };
     private JSplitPane splitMethods;
     private JButton btnGetVersions;
+    private JButton btnTutorial;
+    private final List<String> allMappingVersions = new ArrayList<String>();
+    private boolean isApplyingMappingVersionFilter = false;
+    private javax.swing.Timer mappingVersionFilterTimer;
+    private static final float FONT_SCALE_FACTOR = 1.20f;
+    private static final int MIN_BASE_FONT_SIZE = 14;
+    private static final int TABLE_ROW_HEIGHT = 30;
+    private static final Color BG_APP = new Color(245, 247, 250);
+    private static final Color BG_HEADER = new Color(236, 240, 245);
+    private static final Color BG_TABLE = Color.WHITE;
+    private static final Color BG_TABLE_ALT = new Color(248, 251, 255);
+    private static final Color BORDER_SOFT = new Color(210, 216, 224);
+    private static final Color ACCENT = new Color(52, 120, 246);
     // @formatter:on
 
     private void savePrefs()
@@ -299,6 +323,7 @@ public class MappingGui extends JFrame
         {
             // Set System L&F
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            applyScaledUIFontDefaults();
         }
         catch (Throwable e)
         {}
@@ -375,6 +400,178 @@ public class MappingGui extends JFrame
         btnGetBotCommands.setEnabled(bol);
     }
 
+    private static void applyScaledUIFontDefaults()
+    {
+        Enumeration<Object> keys = UIManager.getDefaults().keys();
+        while (keys.hasMoreElements())
+        {
+            Object key = keys.nextElement();
+            Object value = UIManager.get(key);
+            if (value instanceof FontUIResource)
+            {
+                Font f = (Font) value;
+                int scaledSize = Math.max(MIN_BASE_FONT_SIZE, Math.round(f.getSize() * FONT_SCALE_FACTOR));
+                UIManager.put(key, new FontUIResource(f.getName(), f.getStyle(), scaledSize));
+            }
+        }
+
+        UIManager.put("Panel.background", BG_APP);
+        UIManager.put("Table.background", BG_TABLE);
+        UIManager.put("Table.selectionBackground", ACCENT);
+        UIManager.put("Table.selectionForeground", Color.WHITE);
+        UIManager.put("Table.gridColor", BORDER_SOFT);
+        UIManager.put("TableHeader.background", BG_HEADER);
+        UIManager.put("TableHeader.foreground", new Color(38, 44, 54));
+        UIManager.put("Button.background", Color.WHITE);
+        UIManager.put("Button.foreground", new Color(38, 44, 54));
+        UIManager.put("ComboBox.background", Color.WHITE);
+        UIManager.put("TextField.background", Color.WHITE);
+    }
+
+    private static void makeTableMoreReadable(JTable table)
+    {
+        table.setRowHeight(TABLE_ROW_HEIGHT);
+        table.setShowGrid(true);
+        table.setGridColor(BORDER_SOFT);
+        table.setIntercellSpacing(new Dimension(8, 2));
+        table.setRowMargin(2);
+        table.getTableHeader().setReorderingAllowed(false);
+        table.getTableHeader().setBackground(BG_HEADER);
+
+        Font tableFont = table.getFont();
+        table.setFont(tableFont.deriveFont(Font.PLAIN, Math.max(MIN_BASE_FONT_SIZE, tableFont.getSize2D())));
+
+        Font headerFont = table.getTableHeader().getFont();
+        table.getTableHeader().setFont(headerFont.deriveFont(Font.BOLD, Math.max(MIN_BASE_FONT_SIZE, headerFont.getSize2D())));
+
+        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer()
+        {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column)
+            {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (!isSelected)
+                    c.setBackground(row % 2 == 0 ? BG_TABLE : BG_TABLE_ALT);
+                return c;
+            }
+        });
+    }
+
+    private void applyMappingVersionFilter(String filterText)
+    {
+        if (isApplyingMappingVersionFilter)
+            return;
+
+        isApplyingMappingVersionFilter = true;
+        try
+        {
+            JTextComponent editor = (JTextComponent) cmbMappingVersion.getEditor().getEditorComponent();
+            String editorTextBeforeFilter = filterText == null ? "" : filterText;
+            int caretPosition = editor.getCaretPosition();
+
+            DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) cmbMappingVersion.getModel();
+            String normalizedFilter = editorTextBeforeFilter.trim().toLowerCase();
+
+            model.removeAllElements();
+            for (String version : allMappingVersions)
+            {
+                if (normalizedFilter.isEmpty() || version.toLowerCase().contains(normalizedFilter))
+                    model.addElement(version);
+            }
+
+            if (model.getSize() > 0)
+                btnRefreshTables.setEnabled(true);
+            else
+                btnRefreshTables.setEnabled(false);
+
+            editor.setText(editorTextBeforeFilter);
+            editor.setCaretPosition(Math.min(caretPosition, editorTextBeforeFilter.length()));
+        }
+        finally
+        {
+            isApplyingMappingVersionFilter = false;
+        }
+    }
+
+    private void showTutorialDialog()
+    {
+        String message =
+                "<h2 style='margin:0 0 8px 0;'>Tutorial rápido</h2>" +
+                        "<ol style='margin-top:0;'>" +
+                        "<li><b>Get Versions</b>: pulsa este botón para descargar versiones.</li>" +
+                        "<li><b>Filtrar versión</b>: escribe por ejemplo <code>1.8.9</code> en el combo de Mapping Version.</li>" +
+                        "<li><b>Load Mappings</b>: carga la versión filtrada/seleccionada.</li>" +
+                        "<li><b>Buscar una función</b>: en Search escribe parte del nombre (SRG/MCP/obf) y pulsa <b>Go</b>.</li>" +
+                        "<li><b>Explorar resultados</b>: selecciona una clase y revisa métodos/campos/parámetros abajo.</li>" +
+                        "</ol>" +
+                        "<p><b>Tip:</b> los filtros son sensibles a mayúsculas y minúsculas.</p>";
+
+        showHTMLDialog(MappingGui.this, message, "Tutorial - MCP Mapping Viewer", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private JPanel createSectionPanel(String title, JScrollPane contentScrollPane, JTable table)
+    {
+        JPanel sectionPanel = new JPanel(new BorderLayout(0, 6));
+        sectionPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        sectionPanel.setBackground(BG_APP);
+
+        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        headerPanel.setBackground(BG_APP);
+
+        JLabel sectionTitle = new JLabel(title);
+        sectionTitle.setFont(sectionTitle.getFont().deriveFont(Font.BOLD));
+        headerPanel.add(sectionTitle);
+
+        JLabel searchLabel = new JLabel("Search:");
+        headerPanel.add(searchLabel);
+
+        JTextField sectionSearchField = new JTextField();
+        sectionSearchField.setPreferredSize(new Dimension(220, 28));
+        headerPanel.add(sectionSearchField);
+        installSectionTableFilter(table, sectionSearchField);
+
+        sectionPanel.add(headerPanel, BorderLayout.NORTH);
+        sectionPanel.add(contentScrollPane, BorderLayout.CENTER);
+        return sectionPanel;
+    }
+
+    private void installSectionTableFilter(final JTable table, JTextField searchField)
+    {
+        searchField.getDocument().addDocumentListener(new DocumentListener()
+        {
+            private void applyFilter()
+            {
+                @SuppressWarnings("unchecked")
+                TableRowSorter<TableModel> sorter = table.getRowSorter() instanceof TableRowSorter
+                        ? (TableRowSorter<TableModel>) table.getRowSorter()
+                        : null;
+
+                if (sorter == null)
+                {
+                    sorter = new TableRowSorter<TableModel>(table.getModel());
+                    table.setRowSorter(sorter);
+                }
+
+                String text = searchField.getText();
+                if (text == null || text.trim().isEmpty())
+                    sorter.setRowFilter(null);
+                else
+                    sorter.setRowFilter(RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(text.trim())));
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) { applyFilter(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { applyFilter(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { applyFilter(); }
+        });
+    }
+
     /**
      * Initialize the contents of the frame.
      */
@@ -391,13 +588,16 @@ public class MappingGui extends JFrame
             }
         });
         frmMcpMappingViewer.setTitle("MCP Mapping Viewer");
-        frmMcpMappingViewer.setBounds(100, 100, 925, 621);
+        frmMcpMappingViewer.setBounds(100, 100, 1320, 840);
+        frmMcpMappingViewer.setMinimumSize(new Dimension(1120, 700));
+        frmMcpMappingViewer.setLocationRelativeTo(null);
         frmMcpMappingViewer.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frmMcpMappingViewer.getContentPane().setLayout(new BorderLayout(0, 0));
+        frmMcpMappingViewer.getContentPane().setBackground(BG_APP);
 
         JSplitPane splitMain = new JSplitPane();
-        splitMain.setBorder(null);
-        splitMain.setDividerSize(3);
+        splitMain.setBorder(BorderFactory.createEmptyBorder(8, 10, 10, 10));
+        splitMain.setDividerSize(8);
         splitMain.setResizeWeight(0.5);
         splitMain.setContinuousLayout(true);
         splitMain.setMinimumSize(new Dimension(179, 80));
@@ -406,7 +606,7 @@ public class MappingGui extends JFrame
 
         JScrollPane scrlpnClasses = new JScrollPane();
         scrlpnClasses.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
-        splitMain.setLeftComponent(scrlpnClasses);
+        scrlpnClasses.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
 
         tblClasses = new JTable();
         tblClasses.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -418,24 +618,26 @@ public class MappingGui extends JFrame
         tblClasses.setModel(classesDefaultModel);
         tblClasses.setFillsViewportHeight(true);
         tblClasses.setCellSelectionEnabled(true);
+        makeTableMoreReadable(tblClasses);
+        splitMain.setLeftComponent(createSectionPanel("Classes", scrlpnClasses, tblClasses));
         frmMcpMappingViewer.getContentPane().add(splitMain, BorderLayout.CENTER);
 
         JSplitPane splitMembers = new JSplitPane();
         splitMembers.setBorder(null);
-        splitMembers.setDividerSize(3);
+        splitMembers.setDividerSize(8);
         splitMembers.setResizeWeight(0.5);
         splitMembers.setOrientation(JSplitPane.VERTICAL_SPLIT);
         splitMain.setRightComponent(splitMembers);
 
         splitMethods = new JSplitPane();
         splitMethods.setBorder(null);
-        splitMethods.setDividerSize(3);
+        splitMethods.setDividerSize(8);
         splitMethods.setResizeWeight(0.5);
         splitMembers.setLeftComponent(splitMethods);
 
         JScrollPane scrlpnMethods = new JScrollPane();
         scrlpnMethods.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
-        splitMethods.setLeftComponent(scrlpnMethods);
+        scrlpnMethods.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
 
         tblMethods = new JTable();
         tblMethods.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -445,11 +647,13 @@ public class MappingGui extends JFrame
         tblMethods.setAutoCreateRowSorter(true);
         tblMethods.setEnabled(false);
         tblMethods.setModel(methodsDefaultModel);
+        makeTableMoreReadable(tblMethods);
         scrlpnMethods.setViewportView(tblMethods);
+        splitMethods.setLeftComponent(createSectionPanel("Methods", scrlpnMethods, tblMethods));
 
         JScrollPane scrlpnParams = new JScrollPane();
         scrlpnParams.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
-        splitMethods.setRightComponent(scrlpnParams);
+        scrlpnParams.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
 
         tblParams = new JTable();
         tblParams.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -458,7 +662,9 @@ public class MappingGui extends JFrame
         tblParams.setAutoCreateRowSorter(true);
         tblParams.setEnabled(false);
         tblParams.setModel(paramsDefaultModel);
+        makeTableMoreReadable(tblParams);
         scrlpnParams.setViewportView(tblParams);
+        splitMethods.setRightComponent(createSectionPanel("Method Arguments", scrlpnParams, tblParams));
 
         SwingUtilities.invokeLater(new Runnable()
         {
@@ -471,7 +677,7 @@ public class MappingGui extends JFrame
 
         JScrollPane scrlpnFields = new JScrollPane();
         scrlpnFields.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
-        splitMembers.setRightComponent(scrlpnFields);
+        scrlpnFields.setBorder(BorderFactory.createLineBorder(BORDER_SOFT));
 
         tblFields = new JTable();
         tblFields.setCellSelectionEnabled(true);
@@ -480,27 +686,64 @@ public class MappingGui extends JFrame
         tblFields.setEnabled(false);
         tblFields.setModel(fieldsDefaultModel);
         tblFields.setFillsViewportHeight(true);
+        makeTableMoreReadable(tblFields);
         scrlpnFields.setViewportView(tblFields);
+        splitMembers.setRightComponent(createSectionPanel("Fields", scrlpnFields, tblFields));
 
         JPanel pnlHeader = new JPanel();
         frmMcpMappingViewer.getContentPane().add(pnlHeader, BorderLayout.NORTH);
         pnlHeader.setLayout(new BorderLayout(0, 0));
+        pnlHeader.setBackground(BG_HEADER);
+        pnlHeader.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, BORDER_SOFT), BorderFactory.createEmptyBorder(8, 10, 6, 10)));
 
         JPanel pnlControls = new JPanel();
         pnlHeader.add(pnlControls, BorderLayout.NORTH);
         pnlControls.setSize(new Dimension(0, 40));
-        pnlControls.setLayout(new FlowLayout(FlowLayout.LEFT, 5, 2));
+        pnlControls.setLayout(new FlowLayout(FlowLayout.LEFT, 8, 2));
+        pnlControls.setBackground(BG_HEADER);
 
         cmbMappingVersion = new JComboBox<String>(new DefaultComboBoxModel<String>());
-        cmbMappingVersion.setEditable(false);
-        cmbMappingVersion.setPreferredSize(new Dimension(320, 20));
+        cmbMappingVersion.setEditable(true);
+        cmbMappingVersion.setPreferredSize(new Dimension(360, 28));
         cmbMappingVersion.addItemListener(new MappingVersionsComboItemChanged());
+        mappingVersionFilterTimer = new javax.swing.Timer(180, new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                Object item = cmbMappingVersion.getEditor().getItem();
+                applyMappingVersionFilter(item == null ? "" : item.toString());
+            }
+        });
+        mappingVersionFilterTimer.setRepeats(false);
+
+        ((javax.swing.text.JTextComponent) cmbMappingVersion.getEditor().getEditorComponent()).getDocument().addDocumentListener(new DocumentListener()
+        {
+            private void updateFilter()
+            {
+                if (isApplyingMappingVersionFilter)
+                    return;
+
+                mappingVersionFilterTimer.restart();
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) { updateFilter(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { updateFilter(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { updateFilter(); }
+        });
 
         JLabel lblMappingVersion = new JLabel("Mapping Version");
+        lblMappingVersion.setFont(lblMappingVersion.getFont().deriveFont(Font.BOLD));
         pnlControls.add(lblMappingVersion);
         pnlControls.add(cmbMappingVersion);
 
         btnGetVersions = new JButton("Get Versions");
+        btnGetVersions.setPreferredSize(new Dimension(140, 30));
         btnGetVersions.addActionListener(new ActionListener()
         {
             @Override
@@ -508,11 +751,10 @@ public class MappingGui extends JFrame
             {
                 try
                 {
-                    cmbMappingVersion.removeAllItems();
-                    for (String s : versionFetcher.getVersions(chkForceRefresh.isSelected()))
-                    {
-                        cmbMappingVersion.addItem(s);
-                    }
+                    allMappingVersions.clear();
+                    allMappingVersions.addAll(versionFetcher.getVersions(chkForceRefresh.isSelected()));
+                    Object currentFilter = cmbMappingVersion.getEditor().getItem();
+                    applyMappingVersionFilter(currentFilter == null ? "" : currentFilter.toString());
                 }
                 catch (IOException exc)
                 {}
@@ -520,7 +762,20 @@ public class MappingGui extends JFrame
         });
         pnlControls.add(btnGetVersions);
 
+        btnTutorial = new JButton("Tutorial");
+        btnTutorial.setPreferredSize(new Dimension(118, 30));
+        btnTutorial.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                showTutorialDialog();
+            }
+        });
+        pnlControls.add(btnTutorial);
+
         btnRefreshTables = new JButton("Load Mappings");
+        btnRefreshTables.setPreferredSize(new Dimension(150, 30));
         btnRefreshTables.setEnabled(false);
         btnRefreshTables.addActionListener(new RefreshActionListener());
         pnlControls.add(btnRefreshTables);
@@ -533,6 +788,7 @@ public class MappingGui extends JFrame
         pnlProgress.setVisible(false);
         pnlHeader.add(pnlProgress, BorderLayout.SOUTH);
         pnlProgress.setLayout(new BorderLayout(0, 0));
+        pnlProgress.setBackground(BG_HEADER);
 
         progressBar = new JProgressBar();
         progressBar.setStringPainted(true);
@@ -542,21 +798,25 @@ public class MappingGui extends JFrame
 
         pnlFilter = new JPanel();
         FlowLayout flowLayout = (FlowLayout) pnlFilter.getLayout();
-        flowLayout.setVgap(2);
+        flowLayout.setVgap(4);
+        flowLayout.setHgap(8);
         flowLayout.setAlignment(FlowLayout.LEFT);
         pnlFilter.setVisible(true);
+        pnlFilter.setBackground(BG_HEADER);
         pnlHeader.add(pnlFilter, BorderLayout.CENTER);
 
         JLabel lblFilter = new JLabel("Search");
+        lblFilter.setFont(lblFilter.getFont().deriveFont(Font.BOLD));
         pnlFilter.add(lblFilter);
 
         cmbFilter = new JComboBox<String>();
         cmbFilter.setEditable(true);
-        cmbFilter.setPreferredSize(new Dimension(300, 20));
+        cmbFilter.setPreferredSize(new Dimension(320, 28));
         cmbFilter.setMaximumRowCount(10);
         pnlFilter.add(cmbFilter);
 
         btnSearch = new JButton("Go");
+        btnSearch.setPreferredSize(new Dimension(74, 30));
         btnSearch.setToolTipText("");
         btnSearch.addActionListener(new SearchActionListener());
         pnlFilter.add(btnSearch);
@@ -596,7 +856,7 @@ public class MappingGui extends JFrame
             }
         });
         lblSearchInfo.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        lblSearchInfo.setForeground(Color.BLUE);
+        lblSearchInfo.setForeground(ACCENT.darker());
         pnlFilter.add(lblSearchInfo);
 
         JSeparator separator = new JSeparator();
@@ -606,7 +866,7 @@ public class MappingGui extends JFrame
 
         JLabel lblAbout = new JLabel("About");
         pnlFilter.add(lblAbout);
-        lblAbout.setForeground(Color.BLUE);
+        lblAbout.setForeground(ACCENT.darker());
         lblAbout.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JSeparator separator_1 = new JSeparator();
@@ -615,6 +875,7 @@ public class MappingGui extends JFrame
         pnlFilter.add(separator_1);
 
         btnGetBotCommands = new JButton("Get Command List");
+        btnGetBotCommands.setPreferredSize(new Dimension(170, 30));
         btnGetBotCommands.setToolTipText("Exports to the system clipboard a listing of MCPBot commands for any edits you have made in the GUI.");
         btnGetBotCommands.setEnabled(false);
         btnGetBotCommands.addActionListener(new ActionListener()
