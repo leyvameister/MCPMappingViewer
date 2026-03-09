@@ -50,6 +50,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Enumeration;
 import java.util.prefs.Preferences;
 
 import javax.swing.DefaultComboBoxModel;
@@ -78,6 +79,7 @@ import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
+import javax.swing.plaf.FontUIResource;
 import javax.swing.table.DefaultTableModel;
 
 import bspkrs.mmv.McpMappingLoader;
@@ -185,6 +187,9 @@ public class MappingGui extends JFrame
     };
     private JSplitPane splitMethods;
     private JButton btnGetVersions;
+    private static final float FONT_SCALE_FACTOR = 1.20f;
+    private static final int MIN_BASE_FONT_SIZE = 14;
+    private static final int TABLE_ROW_HEIGHT = 24;
     // @formatter:on
 
     private void savePrefs()
@@ -299,6 +304,7 @@ public class MappingGui extends JFrame
         {
             // Set System L&F
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            applyScaledUIFontDefaults();
         }
         catch (Throwable e)
         {}
@@ -375,6 +381,34 @@ public class MappingGui extends JFrame
         btnGetBotCommands.setEnabled(bol);
     }
 
+    private static void applyScaledUIFontDefaults()
+    {
+        Enumeration<Object> keys = UIManager.getDefaults().keys();
+        while (keys.hasMoreElements())
+        {
+            Object key = keys.nextElement();
+            Object value = UIManager.get(key);
+            if (value instanceof FontUIResource)
+            {
+                Font f = (Font) value;
+                int scaledSize = Math.max(MIN_BASE_FONT_SIZE, Math.round(f.getSize() * FONT_SCALE_FACTOR));
+                UIManager.put(key, new FontUIResource(f.getName(), f.getStyle(), scaledSize));
+            }
+        }
+    }
+
+    private static void makeTableMoreReadable(JTable table)
+    {
+        table.setRowHeight(TABLE_ROW_HEIGHT);
+        table.getTableHeader().setReorderingAllowed(false);
+
+        Font tableFont = table.getFont();
+        table.setFont(tableFont.deriveFont(Font.PLAIN, Math.max(MIN_BASE_FONT_SIZE, tableFont.getSize2D())));
+
+        Font headerFont = table.getTableHeader().getFont();
+        table.getTableHeader().setFont(headerFont.deriveFont(Font.BOLD, Math.max(MIN_BASE_FONT_SIZE, headerFont.getSize2D())));
+    }
+
     /**
      * Initialize the contents of the frame.
      */
@@ -418,6 +452,7 @@ public class MappingGui extends JFrame
         tblClasses.setModel(classesDefaultModel);
         tblClasses.setFillsViewportHeight(true);
         tblClasses.setCellSelectionEnabled(true);
+        makeTableMoreReadable(tblClasses);
         frmMcpMappingViewer.getContentPane().add(splitMain, BorderLayout.CENTER);
 
         JSplitPane splitMembers = new JSplitPane();
@@ -445,6 +480,7 @@ public class MappingGui extends JFrame
         tblMethods.setAutoCreateRowSorter(true);
         tblMethods.setEnabled(false);
         tblMethods.setModel(methodsDefaultModel);
+        makeTableMoreReadable(tblMethods);
         scrlpnMethods.setViewportView(tblMethods);
 
         JScrollPane scrlpnParams = new JScrollPane();
@@ -458,6 +494,7 @@ public class MappingGui extends JFrame
         tblParams.setAutoCreateRowSorter(true);
         tblParams.setEnabled(false);
         tblParams.setModel(paramsDefaultModel);
+        makeTableMoreReadable(tblParams);
         scrlpnParams.setViewportView(tblParams);
 
         SwingUtilities.invokeLater(new Runnable()
@@ -480,6 +517,7 @@ public class MappingGui extends JFrame
         tblFields.setEnabled(false);
         tblFields.setModel(fieldsDefaultModel);
         tblFields.setFillsViewportHeight(true);
+        makeTableMoreReadable(tblFields);
         scrlpnFields.setViewportView(tblFields);
 
         JPanel pnlHeader = new JPanel();
@@ -493,7 +531,7 @@ public class MappingGui extends JFrame
 
         cmbMappingVersion = new JComboBox<String>(new DefaultComboBoxModel<String>());
         cmbMappingVersion.setEditable(false);
-        cmbMappingVersion.setPreferredSize(new Dimension(320, 20));
+        cmbMappingVersion.setPreferredSize(new Dimension(360, 28));
         cmbMappingVersion.addItemListener(new MappingVersionsComboItemChanged());
 
         JLabel lblMappingVersion = new JLabel("Mapping Version");
@@ -552,7 +590,7 @@ public class MappingGui extends JFrame
 
         cmbFilter = new JComboBox<String>();
         cmbFilter.setEditable(true);
-        cmbFilter.setPreferredSize(new Dimension(300, 20));
+        cmbFilter.setPreferredSize(new Dimension(320, 28));
         cmbFilter.setMaximumRowCount(10);
         pnlFilter.add(cmbFilter);
 
