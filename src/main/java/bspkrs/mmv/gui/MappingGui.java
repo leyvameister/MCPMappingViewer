@@ -85,6 +85,7 @@ import javax.swing.event.DocumentListener;
 import javax.swing.plaf.FontUIResource;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.text.JTextComponent;
 
 import bspkrs.mmv.McpMappingLoader;
 import bspkrs.mmv.McpMappingLoader.CantLoadMCPMappingException;
@@ -462,9 +463,12 @@ public class MappingGui extends JFrame
         isApplyingMappingVersionFilter = true;
         try
         {
+            JTextComponent editor = (JTextComponent) cmbMappingVersion.getEditor().getEditorComponent();
+            String editorTextBeforeFilter = filterText == null ? "" : filterText;
+            int caretPosition = editor.getCaretPosition();
+
             DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) cmbMappingVersion.getModel();
-            String normalizedFilter = filterText == null ? "" : filterText.trim().toLowerCase();
-            Object selectedBeforeFilter = cmbMappingVersion.getSelectedItem();
+            String normalizedFilter = editorTextBeforeFilter.trim().toLowerCase();
 
             model.removeAllElements();
             for (String version : allMappingVersions)
@@ -474,18 +478,12 @@ public class MappingGui extends JFrame
             }
 
             if (model.getSize() > 0)
-            {
                 btnRefreshTables.setEnabled(true);
-
-                if (selectedBeforeFilter != null && selectedBeforeFilter.toString().toLowerCase().contains(normalizedFilter))
-                    cmbMappingVersion.setSelectedItem(selectedBeforeFilter);
-                else if (normalizedFilter.isEmpty())
-                    cmbMappingVersion.setSelectedIndex(0);
-            }
             else
                 btnRefreshTables.setEnabled(false);
 
-            cmbMappingVersion.getEditor().setItem(filterText == null ? "" : filterText);
+            editor.setText(editorTextBeforeFilter);
+            editor.setCaretPosition(Math.min(caretPosition, editorTextBeforeFilter.length()));
         }
         finally
         {
