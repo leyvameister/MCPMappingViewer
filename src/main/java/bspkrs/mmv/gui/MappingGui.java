@@ -80,6 +80,8 @@ import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.plaf.FontUIResource;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
@@ -189,6 +191,9 @@ public class MappingGui extends JFrame
     };
     private JSplitPane splitMethods;
     private JButton btnGetVersions;
+    private JButton btnTutorial;
+    private final List<String> allMappingVersions = new ArrayList<String>();
+    private boolean isApplyingMappingVersionFilter = false;
     private static final float FONT_SCALE_FACTOR = 1.20f;
     private static final int MIN_BASE_FONT_SIZE = 14;
     private static final int TABLE_ROW_HEIGHT = 30;
@@ -448,6 +453,54 @@ public class MappingGui extends JFrame
         });
     }
 
+    private void applyMappingVersionFilter(String filterText)
+    {
+        if (isApplyingMappingVersionFilter)
+            return;
+
+        isApplyingMappingVersionFilter = true;
+        try
+        {
+            DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) cmbMappingVersion.getModel();
+            String normalizedFilter = filterText == null ? "" : filterText.trim().toLowerCase();
+
+            model.removeAllElements();
+            for (String version : allMappingVersions)
+            {
+                if (normalizedFilter.isEmpty() || version.toLowerCase().contains(normalizedFilter))
+                    model.addElement(version);
+            }
+
+            if (model.getSize() > 0)
+            {
+                cmbMappingVersion.setSelectedIndex(0);
+                btnRefreshTables.setEnabled(true);
+            }
+            else
+                btnRefreshTables.setEnabled(false);
+        }
+        finally
+        {
+            isApplyingMappingVersionFilter = false;
+        }
+    }
+
+    private void showTutorialDialog()
+    {
+        String message =
+                "<h2 style='margin:0 0 8px 0;'>Tutorial rápido</h2>" +
+                        "<ol style='margin-top:0;'>" +
+                        "<li><b>Get Versions</b>: pulsa este botón para descargar versiones.</li>" +
+                        "<li><b>Filtrar versión</b>: escribe por ejemplo <code>1.8.9</code> en el combo de Mapping Version.</li>" +
+                        "<li><b>Load Mappings</b>: carga la versión filtrada/seleccionada.</li>" +
+                        "<li><b>Buscar una función</b>: en Search escribe parte del nombre (SRG/MCP/obf) y pulsa <b>Go</b>.</li>" +
+                        "<li><b>Explorar resultados</b>: selecciona una clase y revisa métodos/campos/parámetros abajo.</li>" +
+                        "</ol>" +
+                        "<p><b>Tip:</b> los filtros son sensibles a mayúsculas y minúsculas.</p>";
+
+        showHTMLDialog(MappingGui.this, message, "Tutorial - MCP Mapping Viewer", JOptionPane.INFORMATION_MESSAGE);
+    }
+
     /**
      * Initialize the contents of the frame.
      */
@@ -579,9 +632,37 @@ public class MappingGui extends JFrame
         pnlControls.setBackground(BG_HEADER);
 
         cmbMappingVersion = new JComboBox<String>(new DefaultComboBoxModel<String>());
-        cmbMappingVersion.setEditable(false);
+        cmbMappingVersion.setEditable(true);
         cmbMappingVersion.setPreferredSize(new Dimension(360, 28));
         cmbMappingVersion.addItemListener(new MappingVersionsComboItemChanged());
+        ((javax.swing.text.JTextComponent) cmbMappingVersion.getEditor().getEditorComponent()).getDocument().addDocumentListener(new DocumentListener()
+        {
+            private void updateFilter()
+            {
+                SwingUtilities.invokeLater(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        if (isApplyingMappingVersionFilter)
+                            return;
+
+                        String txt = cmbMappingVersion.getEditor().getItem() == null ? "" : cmbMappingVersion.getEditor().getItem().toString();
+                        applyMappingVersionFilter(txt);
+                        cmbMappingVersion.getEditor().setItem(txt);
+                    }
+                });
+            }
+
+            @Override
+            public void insertUpdate(DocumentEvent e) { updateFilter(); }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) { updateFilter(); }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) { updateFilter(); }
+        });
 
         JLabel lblMappingVersion = new JLabel("Mapping Version");
         lblMappingVersion.setFont(lblMappingVersion.getFont().deriveFont(Font.BOLD));
@@ -597,17 +678,28 @@ public class MappingGui extends JFrame
             {
                 try
                 {
-                    cmbMappingVersion.removeAllItems();
-                    for (String s : versionFetcher.getVersions(chkForceRefresh.isSelected()))
-                    {
-                        cmbMappingVersion.addItem(s);
-                    }
+                    allMappingVersions.clear();
+                    allMappingVersions.addAll(versionFetcher.getVersions(chkForceRefresh.isSelected()));
+                    Object currentFilter = cmbMappingVersion.getEditor().getItem();
+                    applyMappingVersionFilter(currentFilter == null ? "" : currentFilter.toString());
                 }
                 catch (IOException exc)
                 {}
             }
         });
         pnlControls.add(btnGetVersions);
+
+        btnTutorial = new JButton("Tutorial");
+        btnTutorial.setPreferredSize(new Dimension(118, 30));
+        btnTutorial.addActionListener(new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                showTutorialDialog();
+            }
+        });
+        pnlControls.add(btnTutorial);
 
         btnRefreshTables = new JButton("Load Mappings");
         btnRefreshTables.setPreferredSize(new Dimension(150, 30));
