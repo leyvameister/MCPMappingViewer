@@ -194,6 +194,7 @@ public class MappingGui extends JFrame
     private JButton btnTutorial;
     private final List<String> allMappingVersions = new ArrayList<String>();
     private boolean isApplyingMappingVersionFilter = false;
+    private javax.swing.Timer mappingVersionFilterTimer;
     private static final float FONT_SCALE_FACTOR = 1.20f;
     private static final int MIN_BASE_FONT_SIZE = 14;
     private static final int TABLE_ROW_HEIGHT = 30;
@@ -463,6 +464,7 @@ public class MappingGui extends JFrame
         {
             DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) cmbMappingVersion.getModel();
             String normalizedFilter = filterText == null ? "" : filterText.trim().toLowerCase();
+            Object selectedBeforeFilter = cmbMappingVersion.getSelectedItem();
 
             model.removeAllElements();
             for (String version : allMappingVersions)
@@ -473,11 +475,17 @@ public class MappingGui extends JFrame
 
             if (model.getSize() > 0)
             {
-                cmbMappingVersion.setSelectedIndex(0);
                 btnRefreshTables.setEnabled(true);
+
+                if (selectedBeforeFilter != null && selectedBeforeFilter.toString().toLowerCase().contains(normalizedFilter))
+                    cmbMappingVersion.setSelectedItem(selectedBeforeFilter);
+                else if (normalizedFilter.isEmpty())
+                    cmbMappingVersion.setSelectedIndex(0);
             }
             else
                 btnRefreshTables.setEnabled(false);
+
+            cmbMappingVersion.getEditor().setItem(filterText == null ? "" : filterText);
         }
         finally
         {
@@ -635,23 +643,25 @@ public class MappingGui extends JFrame
         cmbMappingVersion.setEditable(true);
         cmbMappingVersion.setPreferredSize(new Dimension(360, 28));
         cmbMappingVersion.addItemListener(new MappingVersionsComboItemChanged());
+        mappingVersionFilterTimer = new javax.swing.Timer(180, new ActionListener()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                Object item = cmbMappingVersion.getEditor().getItem();
+                applyMappingVersionFilter(item == null ? "" : item.toString());
+            }
+        });
+        mappingVersionFilterTimer.setRepeats(false);
+
         ((javax.swing.text.JTextComponent) cmbMappingVersion.getEditor().getEditorComponent()).getDocument().addDocumentListener(new DocumentListener()
         {
             private void updateFilter()
             {
-                SwingUtilities.invokeLater(new Runnable()
-                {
-                    @Override
-                    public void run()
-                    {
-                        if (isApplyingMappingVersionFilter)
-                            return;
+                if (isApplyingMappingVersionFilter)
+                    return;
 
-                        String txt = cmbMappingVersion.getEditor().getItem() == null ? "" : cmbMappingVersion.getEditor().getItem().toString();
-                        applyMappingVersionFilter(txt);
-                        cmbMappingVersion.getEditor().setItem(txt);
-                    }
-                });
+                mappingVersionFilterTimer.restart();
             }
 
             @Override
